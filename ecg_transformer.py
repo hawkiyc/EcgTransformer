@@ -15,13 +15,6 @@ from pos_encoder import *
 from self_attention_pooling import *
 from decoder_masking import *
 
-if __name__ != '__main__':
-    "Get out_features argument from preprocessing while training the model"
-    from preprocessing import *
-else: 
-    "Set the out_features argument for checking the model is well functioned"
-    model_out = 5
-
 #%%
 'TS-Transformer'
 
@@ -209,16 +202,6 @@ if __name__ == '__main__':
                                shuffle = False)
     
     model = ECGTransformer(use_self_att_pool=False)
-    model.to(device)
-    model.eval()
-    with torch.no_grad():
-        for x0,x1,y in pseudo_loader:
-            x0,x1,y = x0.to(device), x1.to(device), y.to(device)
-            pseudo_y_hat = model(x0,x1)
-            pseudo_loss = loss_fn(pseudo_y_hat, y)
-            print(pseudo_loss.item())
-    
-    model = ECGTransformer()
     model.to(device)
     model.eval()
     with torch.no_grad():
