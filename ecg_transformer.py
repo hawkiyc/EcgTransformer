@@ -75,13 +75,16 @@ class ECGTransformer(nn.Module):
                                                    dropout = dropout_encoder,
                                                    activation = act,
                                                    batch_first = True)
-        self.encoder = nn.TransformerEncoder(encoder_layer, 
-                                             num_layers = n_encoder_layers, 
-                                             norm = norm)
+        self.ecg_encoder = nn.TransformerEncoder(
+            encoder_layer, num_layers = n_encoder_layers, norm = norm)
+        self.rr_encoder = nn.TransformerEncoder(
+            encoder_layer, num_layers = n_encoder_layers, norm = norm)
         
         'self attention pooling'
-        self.self_att_pool = SelfAttentionPooling(input_dim = emb_dim
-                                  ) if use_self_att_pool else nn.Identity()
+        self.ecg_self_att_pool = SelfAttentionPooling(
+            input_dim = emb_dim ) if use_self_att_pool else nn.Identity()
+        self.rr_self_att_pool = SelfAttentionPooling(
+            input_dim = emb_dim ) if use_self_att_pool else nn.Identity()
         self.use_self_att_pool = use_self_att_pool
         
         'transformer decoder'
@@ -92,9 +95,10 @@ class ECGTransformer(nn.Module):
                                                    dropout = dropout_decoder,
                                                    activation = act,
                                                    batch_first = True)
-        self.decoder = nn.TransformerDecoder(decoder_layer, 
-                                             num_layers = n_decoder_layers, 
-                                             norm = norm)
+        self.ecg_decoder = nn.TransformerDecoder(
+            decoder_layer, num_layers = n_decoder_layers, norm = norm)
+        self.rr_decoder = nn.TransformerDecoder(
+            decoder_layer, num_layers = n_decoder_layers, norm = norm)
         
         'FC'
         self.flatten = nn.Flatten()
@@ -110,45 +114,39 @@ class ECGTransformer(nn.Module):
                   memory_rr_mask = src_rr_mask,):
         
         'input/src embedding'
-        pseudo_src0 = self.ecg_encoder_emb(Variable(
+        pseudo_ecg = self.ecg_encoder_emb(Variable(
             torch.ones(2,d_input[0], seq_length)))
-        pseudo_src1 = self.rr_encoder_emb(Variable(
+        pseudo_rr = self.rr_encoder_emb(Variable(
             torch.ones(2,d_input[1], max_rr_seq)))
         
         'get encoder output'
         
-        pseudo_src0 = self.encoder(pseudo_src0)
-        pseudo_src0 = self.self_att_pool(pseudo_src0)
-        pseudo_src1 = self.encoder(pseudo_src1)
-        pseudo_src1 = self.self_att_pool(pseudo_src1)
+        pseudo_ecg = self.ecg_encoder(pseudo_ecg)
+        pseudo_ecg = self.ecg_self_att_pool(pseudo_ecg)
+        pseudo_rr = self.rr_encoder(pseudo_rr)
+        pseudo_rr = self.rr_self_att_pool(pseudo_rr)
         
         'tgt/positional embedding'
-        pseudo_tgt0 = self.ecg_decoder_emb(Variable(
+        pseudo_tgt_ecg = self.ecg_decoder_emb(Variable(
             torch.ones(2,d_input[0], seq_length)))
-        pseudo_tgt1 = self.rr_decoder_emb(Variable(
+        pseudo_tgt_rr = self.rr_decoder_emb(Variable(
             torch.ones(2,d_input[1], max_rr_seq)))
         
         'get decoder output'
-        pseudo_output0 = self.decoder(
-            tgt = pseudo_tgt0, 
-            memory = pseudo_src0,
-            tgt_mask = tgt_ecg_mask,
+        pseudo_out_ecg = self.ecg_decoder(
+            tgt = pseudo_tgt_ecg, memory = pseudo_ecg, tgt_mask = tgt_ecg_mask,
             memory_mask = None if self.use_self_att_pool else memory_ecg_mask)
-        pseudo_output1 = self.decoder(
-            tgt = pseudo_tgt1, 
-            memory = pseudo_src1,
-            tgt_mask = tgt_rr_mask, 
+        pseudo_out_rr = self.rr_decoder(
+            tgt = pseudo_tgt_rr, memory = pseudo_rr, tgt_mask = tgt_rr_mask, 
             memory_mask = None if self.use_self_att_pool else memory_rr_mask)
         
-        pseudo_outputs = torch.cat([pseudo_output0, pseudo_output1], dim = 1)
+        pseudo_outputs = torch.cat([pseudo_out_ecg, pseudo_out_rr], dim = 1)
         pseudo_outputs = self.flatten(pseudo_outputs)
         
         return pseudo_outputs.data.view(2, -1).size(1)
     
-    def forward(self, ecg, rr, 
-                tgt_ecg_mask = tgt_ecg_mask, 
-                tgt_rr_mask = tgt_rr_mask, 
-                memory_ecg_mask = src_ecg_mask, 
+    def forward(self, ecg, rr, tgt_ecg_mask = tgt_ecg_mask, 
+                tgt_rr_mask = tgt_rr_mask, memory_ecg_mask = src_ecg_mask, 
                 memory_rr_mask = src_rr_mask,):
         
         'input/src embedding'
@@ -156,26 +154,24 @@ class ECGTransformer(nn.Module):
         rr_src = self.rr_encoder_emb(rr)
         
         'get encoder output'
-        ecg_src = self.encoder(src = ecg_src)
-        ecg_src = self.self_att_pool(ecg_src)
+        ecg_src = self.ecg_encoder(src = ecg_src)
+        ecg_src = self.ecg_self_att_pool(ecg_src)
         
-        rr_src = self.encoder(src = rr_src)
-        rr_src = self.self_att_pool(rr_src)
+        rr_src = self.rr_encoder(src = rr_src)
+        rr_src = self.rr_self_att_pool(rr_src)
         
         'tgt/positional embedding'
         ecg_tgt = self.ecg_decoder_emb(ecg)
         rr_tgt = self.rr_decoder_emb(rr)
         
         'get decoder output'
-        ecg_decoder_output = self.decoder(
-            tgt = ecg_tgt,
-            memory = ecg_src,
+        ecg_decoder_output = self.ecg_decoder(
+            tgt = ecg_tgt, memory = ecg_src, 
             tgt_mask = tgt_ecg_mask.to(device, torch.float32),
             memory_mask = None if self.use_self_att_pool 
                 else memory_ecg_mask.to(device, torch.float32))
-        rr_decoder_output = self.decoder(
-            tgt = rr_tgt, 
-            memory = rr_src, 
+        rr_decoder_output = self.rr_decoder(
+            tgt = rr_tgt, memory = rr_src, 
             tgt_mask = tgt_rr_mask.to(device, torch.float32), 
             memory_mask = None if self.use_self_att_pool 
                 else  memory_rr_mask.to(device, torch.float32))
