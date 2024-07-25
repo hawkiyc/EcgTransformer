@@ -1,6 +1,7 @@
 # EcgTransformer
 
 This repository is implementation of "Transformer-based Neural Network for Electrocardiogram Classification" from "International Journal of Advanced Computer Science and Applications, Vol. 13, No. 11, 2022". Please note that I am still working on the training processing and have not yet evaluation of model performance.
+![截圖 2024-07-26 01 27 17](https://github.com/user-attachments/assets/9be1f0de-db2d-4a30-8058-2744191313e0)
 
 # Reference
 
